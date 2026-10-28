@@ -38,15 +38,20 @@ export async function createTestDb(): Promise<PGlite> {
 
 export type Claims = { sub?: string; aal?: "aal1" | "aal2" };
 
-/** Run fn as a signed-in user (role authenticated) or as anon, then roll back. */
+/**
+ * Run fn as a signed-in user (role authenticated) or as anon, then roll back.
+ * setupSql, if given, runs first as the database owner inside the same transaction.
+ */
 export async function as<T>(
   db: PGlite,
   who: Claims | "anon",
   fn: (tx: Transaction) => Promise<T>,
+  setupSql?: string,
 ): Promise<T> {
   let result!: T;
   await db
     .transaction(async (tx) => {
+      if (setupSql) await tx.exec(setupSql);
       if (who === "anon") {
         await tx.exec("set local role anon");
       } else {

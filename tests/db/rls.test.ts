@@ -136,21 +136,15 @@ describe("landlord", () => {
 
   it("falls back to Work Order -> Landlord when the property has no Current Landlord", async () => {
     // Give C4 a landlord login for this test only.
-    await db.transaction(async (tx) => {
-      await tx.exec(`
-        insert into auth.users (id) values ('00000000-0000-0000-0000-0000000000c4');
-        insert into public.profiles (id, role, contact_id) values ('00000000-0000-0000-0000-0000000000c4', 'landlord', 'recC4');
-      `);
-      await tx.query("select set_config('request.jwt.claims', $1, true)", [
-        JSON.stringify({ sub: "00000000-0000-0000-0000-0000000000c4", aal: "aal1" }),
-      ]);
-      await tx.exec("set local role authenticated");
-      const p = await tx.query<{ id: string }>("select id from public.properties order by id");
-      const w = await tx.query<{ id: string }>("select id from public.work_orders order by id");
-      expect(p.rows.map((r) => r.id)).toEqual(["recP4"]);
-      expect(w.rows.map((r) => r.id)).toEqual(["recW4"]);
-      await tx.rollback();
-    }).catch((e) => { if (!/rollback/i.test(String(e))) throw e; });
+    const c4 = "00000000-0000-0000-0000-0000000000c4";
+    const setup = `
+      insert into auth.users (id) values ('${c4}');
+      insert into public.profiles (id, role, contact_id) values ('${c4}', 'landlord', 'recC4');
+    `;
+    await as(db, aal1(c4), async (tx) => {
+      expect(await ids(tx, "properties")).toEqual(["recP4"]);
+      expect(await ids(tx, "work_orders")).toEqual(["recW4"]);
+    }, setup);
   });
 
   it("with consent Pending sees nothing", async () => {
@@ -160,17 +154,33 @@ describe("landlord", () => {
     });
   });
 
+  it("with consent Agency Notified (agency notification model) sees their property", async () => {
+    await as(db, aal1(U.landlordC1), async (tx) => {
+      expect(await ids(tx, "properties")).toEqual(["recP1"]);
+      expect(await ids(tx, "work_orders")).toEqual(["recW1"]);
+    }, "update public.contacts set consent_status = 'Agency Notified' where id = 'recC1'");
+  });
+
+  it("loses access when an objection sets an Agency Notified landlord back to Pending", async () => {
+    await as(db, aal1(U.landlordC1), async (tx) => {
+      expect(await ids(tx, "properties")).toEqual([]);
+      expect(await ids(tx, "work_orders")).toEqual([]);
+    }, `
+      update public.contacts set consent_status = 'Agency Notified' where id = 'recC1';
+      update public.contacts set consent_status = 'Pending' where id = 'recC1';
+    `);
+  });
+
   it("loses access when consent changes to Declined", async () => {
-    await db.transaction(async (tx) => {
-      await tx.exec("update public.contacts set consent_status = 'Declined' where id = 'recC1'");
-      await tx.query("select set_config('request.jwt.claims', $1, true)", [
-        JSON.stringify({ sub: U.landlordC1, aal: "aal1" }),
-      ]);
-      await tx.exec("set local role authenticated");
-      const p = await tx.query("select id from public.properties");
-      expect(p.rows).toEqual([]);
-      await tx.rollback();
-    }).catch((e) => { if (!/rollback/i.test(String(e))) throw e; });
+    await as(db, aal1(U.landlordC1), async (tx) => {
+      expect(await ids(tx, "properties")).toEqual([]);
+    }, "update public.contacts set consent_status = 'Declined' where id = 'recC1'");
+  });
+
+  it("an unrecognised consent value gives no access", async () => {
+    await as(db, aal1(U.landlordC1), async (tx) => {
+      expect(await ids(tx, "properties")).toEqual([]);
+    }, "update public.contacts set consent_status = 'Granted (pending check)' where id = 'recC1'");
   });
 
   it("cannot read contacts (including their own), agencies or suppliers", async () => {
@@ -234,6 +244,36 @@ describe("everyone else", () => {
     for (const sql of writes) {
       await expect(as(db, aal2(U.admin), (tx) => tx.exec(sql)), sql).rejects.toThrow(/permission denied/);
     }
+  });
+});
+
+describe("work_order_facets (filter values)", () => {
+  const facets = (tx: Parameters<Parameters<typeof as>[2]>[0]) =>
+    tx
+      .query<{ kind: string; value: string }>("select kind, value from public.work_order_facets() order by kind, value")
+      .then((r) => r.rows.map((f) => `${f.kind}:${f.value}`));
+
+  it("admin sees values from every work order", async () => {
+    await as(db, aal2(U.admin), async (tx) => {
+      expect(await facets(tx)).toEqual([
+        "activity_type:Draughtproofing",
+        "activity_type:Insulation",
+        "activity_type:Showerheads",
+      ]);
+    });
+  });
+
+  it("only reflects rows the caller can see", async () => {
+    await as(db, aal1(U.installerS1), async (tx) => {
+      expect(await facets(tx)).toEqual(["activity_type:Insulation"]);
+    });
+    await as(db, aal1(U.noProfile), async (tx) => {
+      expect(await facets(tx)).toEqual([]);
+    });
+  });
+
+  it("anon cannot call it", async () => {
+    await expect(as(db, "anon", (tx) => facets(tx))).rejects.toThrow(/permission denied/);
   });
 });
 
