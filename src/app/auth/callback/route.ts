@@ -11,12 +11,13 @@ export async function GET(request: NextRequest) {
   const type = url.searchParams.get("type") as EmailOtpType | null;
   const supabase = await createClient();
 
-  let ok = false;
+  let error: { message: string } | null = { message: "no code or token_hash in link" };
   if (code) {
-    ok = !(await supabase.auth.exchangeCodeForSession(code)).error;
+    ({ error } = await supabase.auth.exchangeCodeForSession(code));
   } else if (tokenHash && type) {
-    ok = !(await supabase.auth.verifyOtp({ token_hash: tokenHash, type })).error;
+    ({ error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type }));
   }
+  if (error) console.warn(`auth callback rejected (${code ? "code" : tokenHash ? "token_hash" : "none"}): ${error.message}`);
 
-  return NextResponse.redirect(new URL(ok ? "/mfa" : "/login?error=link", url.origin));
+  return NextResponse.redirect(new URL(error ? "/login?error=link" : "/mfa", url.origin));
 }

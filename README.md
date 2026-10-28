@@ -47,8 +47,20 @@ Vercel project with functions pinned to Sydney (`vercel.json`). Set the variable
 `.env.example` in Vercel. The cron in `vercel.json` calls `/api/sync/airtable` daily at
 19:00 UTC (5–6am Melbourne).
 
+## Supabase settings that live outside this repo
+
+- Authentication → Sign In / Providers: email on, **Allow new users to sign up off**.
+- Authentication → URL Configuration: redirect URLs include `http://localhost:3000/auth/callback`
+  and `https://portal.homestarupgrades.com/auth/callback`; Site URL is the live portal address.
+- Authentication → Emails → SMTP: Resend (`smtp.resend.com`, port 465, user `resend`), sender
+  `portal@homestarupgrades.com`. DNS records for Resend are in GoDaddy.
+- Authentication → Emails → Templates → Magic Link: body as in `supabase/templates/magic_link.html`.
+  It uses `token_hash` so links work in any browser. The default template's `{{ .ConfirmationURL }}`
+  only works in the browser that requested the link.
+
 ## Making someone an admin
 
-1. Supabase dashboard → Authentication → Users → Invite user (their email).
+1. Supabase dashboard → Authentication → Users → Add user → **Create new user** (their email,
+   tick auto-confirm). Don't use "Invite user": the default invite email isn't compatible yet (Phase 1b).
 2. SQL editor: `insert into public.profiles (id, role, full_name) select id, 'admin', 'Name' from auth.users where email = 'them@example.com';`
-3. They open the invite email, then set up an authenticator app at first sign-in.
+3. They sign in from the login page and set up an authenticator app at first sign-in.
