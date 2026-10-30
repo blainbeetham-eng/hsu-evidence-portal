@@ -53,6 +53,7 @@ export const TABLES = {
       supplier: "fldBu2fXlwxDu92Ik", // Supplier (link)
       aiJobSummary: "fldbvoeI2QJnv8Hso", // AI Job Summary
       testData: "fld59U0dQpM0ocPXV", // Test data
+      driveFolderLink: "fldnF9lSOuZnDDCga", // Drive Folder Link (Phase 2A, Import from Drive)
     },
   },
 } as const;

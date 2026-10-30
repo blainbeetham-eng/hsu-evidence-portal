@@ -75,6 +75,7 @@ export function mapWorkOrder(r: AirtableRecord, syncedAt: string) {
     supplier_ids: links(r.fields[F.workOrders.supplier]),
     ai_job_summary: text(r.fields[F.workOrders.aiJobSummary]),
     is_test: r.fields[F.workOrders.testData] === true,
+    drive_folder_url: text(r.fields[F.workOrders.driveFolderLink]),
     synced_at: syncedAt,
     removed_at: null,
   };

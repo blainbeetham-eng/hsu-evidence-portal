@@ -83,6 +83,26 @@ dl.facts dt { color: var(--muted); }
 dl.facts dd { margin: 0; }
 .pre { white-space: pre-wrap; }
 
+/* Assessment stage */
+h3 { font-size: 1rem; margin: 1.5rem 0 0.5rem; }
+.row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.row.spread { justify-content: space-between; }
+.stack { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1rem; }
+.card.stack { margin-bottom: 1rem; }
+textarea { font: inherit; padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: 6px; width: 100%; }
+a.button { display: inline-block; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 6px; text-decoration: none; border: 1px solid var(--border); }
+button.link { background: none; border: 0; padding: 0; color: var(--green); font-weight: 400; text-decoration: underline; }
+details > summary { cursor: pointer; color: var(--green); font-weight: 600; margin-bottom: 0.5rem; }
+.summary { border-left: 3px solid var(--gold); padding-left: 0.9rem; }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
+.photo-grid figure { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.photo-grid img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.photo-grid figcaption { padding: 0.35rem 0.5rem; }
+.no-thumb { display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 3; padding: 0.5rem; text-align: center; background: var(--green-pale); font-size: 0.85rem; }
+figure.video { margin: 0 0 1rem; }
+figure.video video { width: 100%; max-width: 720px; border-radius: 8px; background: #000; display: block; }
+.is-hidden { opacity: 0.45; }
+
 @media (max-width: 640px) {
   .shell-header { height: auto; padding: 0.75rem 1rem; gap: 0.5rem 1rem; }
   .shell-main { padding: 1rem; }

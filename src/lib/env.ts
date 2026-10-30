@@ -17,4 +17,7 @@ export const serverEnv = {
   supabaseSecretKey: () => required("SUPABASE_SECRET_KEY"),
   airtableToken: () => required("AIRTABLE_TOKEN"),
   cronSecret: () => required("CRON_SECRET"),
+  anthropicApiKey: () => required("ANTHROPIC_API_KEY"),
+  anthropicModel: () => process.env.ANTHROPIC_MODEL || "claude-opus-5-5",
+  googleServiceAccountJson: () => required("GOOGLE_SERVICE_ACCOUNT_JSON"),
 };
