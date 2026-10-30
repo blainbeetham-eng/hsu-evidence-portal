@@ -1,0 +1,68 @@
+# Nightly backup to AWS S3 in Sydney (security spec B2 and B3).
+# Database: Supabase's own dump format (roles, schema, data), kept 35 days by the bucket's lifecycle rule.
+# Files: every Storage file not yet backed up, kept indefinitely.
+# The AWS key can only list and add files in the backup bucket; it cannot read or delete.
+# GitHub emails the repo owner when a scheduled run fails.
+name: Nightly backup
+
+on:
+  schedule:
+    - cron: "0 16 * * *" # 16:00 UTC = 2-3am Melbourne
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-backup
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-2
+  BACKUP_BUCKET: hsu-portal-backup-syd
+  SUPABASE_URL: https://zkfxfrshwgflunepbvhm.supabase.co
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BACKUP_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BACKUP_SECRET_ACCESS_KEY }}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p dump
+          supabase db dump --db-url "$SUPABASE_DB_URL" --role-only -f dump/roles.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f dump/schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" --data-only --use-copy -f dump/data.sql
+          echo "Tables with data:"
+          grep '^COPY ' dump/data.sql | cut -d' ' -f2 | sort
+          gzip dump/*.sql
+          ls -l dump
+
+      - name: Upload database dump
+        run: |
+          stamp=$(date -u +%Y-%m-%dT%H%M%SZ)
+          for f in dump/*.sql.gz; do
+            aws s3 cp "$f" "s3://$BACKUP_BUCKET/db/$stamp/$(basename "$f")" --checksum-algorithm SHA256
+          done
+
+      - name: Copy new Storage files
+        env:
+          SUPABASE_BACKUP_SECRET_KEY: ${{ secrets.SUPABASE_BACKUP_SECRET_KEY }}
+        run: node scripts/backup-storage.mjs
