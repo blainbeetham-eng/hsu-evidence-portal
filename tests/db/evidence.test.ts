@@ -115,6 +115,17 @@ describe("admin", () => {
     });
   });
 
+  it("gets the new row back when recording a file (INSERT ... RETURNING, as the app does)", async () => {
+    await as(db, aal2(U.admin), async (tx) => {
+      const r = await tx.query<{ id: string }>(`insert into public.evidence_files (work_order_id, kind, storage_path, file_name, sha256, source, uploaded_by)
+        values ('recW1', 'report', 'recW1/returning.pdf', 'returning.pdf', '${HASH}', 'drive_import', '${U.admin}') returning id`);
+      expect(r.rows).toHaveLength(1);
+      const s = await tx.query(`insert into public.report_summaries (report_id, version, body, created_by)
+        values ('${r.rows[0].id}', 1, 'x', '${U.admin}') returning id`);
+      expect(s.rows).toHaveLength(1);
+    });
+  });
+
   it("cannot record an upload or audit entry under someone else's name", async () => {
     await as(db, aal2(U.admin), async (tx) => {
       expect(await fails(tx, `insert into public.evidence_files (work_order_id, kind, storage_path, file_name, sha256, source, uploaded_by)
