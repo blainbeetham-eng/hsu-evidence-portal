@@ -75,7 +75,7 @@ export default async function PropertyPage({
     reportIds.length
       ? supabase.from("report_summaries").select("*").in("report_id", reportIds).order("version", { ascending: false })
       : Promise.resolve({ data: [] as Summary[] }),
-    reportIds.length && !preview
+    reportIds.length
       ? supabase.from("report_extras").select("report_id, di_report_url").in("report_id", reportIds)
       : Promise.resolve({ data: [] as { report_id: string; di_report_url: string | null }[] }),
   ]);
@@ -185,7 +185,7 @@ export default async function PropertyPage({
               </div>
               <div className="row">
                 {url.get(r.storage_path) && <a href={url.get(r.storage_path)} target="_blank" rel="noreferrer">Open report (PDF)</a>}
-                {!preview && diLink.get(r.id) && <a href={diLink.get(r.id)!} target="_blank" rel="noreferrer">Open DI report (photos, video)</a>}
+                {diLink.get(r.id) && <a href={diLink.get(r.id)!} target="_blank" rel="noreferrer">Open DI report (photos, video)</a>}
                 {!preview && <HideToggle propertyId={id} fileId={r.id} hidden={r.hidden} />}
               </div>
             </div>

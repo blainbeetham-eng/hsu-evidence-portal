@@ -174,10 +174,22 @@ describe("landlord", () => {
     });
   });
 
-  it("never sees the DI report link", async () => {
+  it("sees the DI report link for their own visible report, and can't change it", async () => {
     await as(db, aal2(U.landlordC1), async (tx) => {
-      expect((await tx.query("select * from public.report_extras")).rows).toEqual([]);
+      expect((await tx.query("select di_report_url from public.report_extras")).rows).toHaveLength(1);
+      expect(await fails(tx, `insert into public.report_extras (report_id, di_report_url) values ('${F.photo}', 'https://x')`)).toBe(true);
+      await tx.exec("update public.report_extras set di_report_url = 'https://evil.example'");
+      expect((await tx.query<{ u: string }>("select di_report_url as u from public.report_extras")).rows[0].u).toBe("https://di.example/report/1");
     });
+  });
+
+  it("loses the DI link when the report is hidden", async () => {
+    await as(
+      db,
+      aal2(U.landlordC1),
+      async (tx) => expect((await tx.query("select * from public.report_extras")).rows).toEqual([]),
+      `update public.evidence_files set hidden = true where id = '${F.report}'`,
+    );
   });
 
   it("with consent Pending sees nothing", async () => {
@@ -217,7 +229,7 @@ describe("agency_user", () => {
     await as(db, aal2(U.agency1), async (tx) => {
       expect(await files(tx)).toEqual(["recW1/photo.jpg", "recW1/report.pdf", "recW1/roof.mp4"]);
       expect(await summaries(tx)).toEqual(["current"]);
-      expect((await tx.query("select * from public.report_extras")).rows).toEqual([]);
+      expect((await tx.query("select * from public.report_extras")).rows).toHaveLength(1);
     });
     await as(db, aal2(U.agency2), async (tx) => {
       expect(await files(tx)).toEqual(["recW2/report.pdf"]);
