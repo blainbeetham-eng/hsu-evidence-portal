@@ -41,10 +41,11 @@ jobs:
           supabase init
           supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,mailpit,postgres-meta,postgrest
 
+      # roles.sql sets role parameters that only the superuser may change.
       - name: Restore
         run: |
           start=$(date +%s)
-          psql "$RESTORED_DB" --single-transaction -v ON_ERROR_STOP=1 \
+          psql "postgresql://supabase_admin:postgres@127.0.0.1:54322/postgres" --single-transaction -v ON_ERROR_STOP=1 \
             -f dump/roles.sql -f dump/schema.sql \
             -c 'SET session_replication_role = replica' -f dump/data.sql > /dev/null
           echo "Restored in $(( $(date +%s) - start ))s"
