@@ -47,6 +47,25 @@ Vercel project with functions pinned to Sydney (`vercel.json`). Set the variable
 `.env.example` in Vercel. The cron in `vercel.json` calls `/api/sync/airtable` daily at
 19:00 UTC (5–6am Melbourne).
 
+## Backups
+
+Separate from Supabase's own daily backups, which don't cover Storage files.
+
+- **Where:** AWS S3 bucket `hsu-portal-backup-syd` (Sydney), versioned, Object Lock Governance 35 days.
+  Lifecycle rule `expire-database-copies` removes `db/` copies after 35 days; `files/` copies are kept.
+- **Nightly job:** `.github/workflows/nightly-backup.yml`, 16:00 UTC. Database as `db/<timestamp>/`
+  (roles, schema, data from `supabase db dump`); new Storage files as `files/<bucket>/<path>` with a
+  `sha256` metadata value. GitHub emails the repo owner if a scheduled run fails.
+- **Access:** IAM user `hsu-portal-backup-writer`, inline policy `backup-add-files-only` (list and add
+  only). Keys are GitHub secrets `AWS_BACKUP_ACCESS_KEY_ID` / `AWS_BACKUP_SECRET_ACCESS_KEY`; Supabase
+  access is `SUPABASE_DB_URL` (session pooler) and `SUPABASE_BACKUP_SECRET_KEY` (secret key `github_backup`).
+- **Restore test** (before Phase 2A goes live, then quarterly): temporarily add `"s3:GetObject"` to the
+  second statement of `backup-add-files-only`, run `.github/workflows/restore-test.yml` from the Actions
+  tab, then remove it. Record the date, time taken and result in HSU_Master_Reference.md.
+- **Real restore:** download `db/<timestamp>/` and run, against the target database,
+  `psql --single-transaction -v ON_ERROR_STOP=1 -f roles.sql -f schema.sql -c 'SET session_replication_role = replica' -f data.sql`,
+  then copy `files/<bucket>/` back into Storage.
+
 ## Supabase settings that live outside this repo
 
 - Authentication → Sign In / Providers: email on, **Allow new users to sign up off**.

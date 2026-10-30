@@ -1,0 +1,74 @@
+# Restore test (security spec B5): run by hand, first before Phase 2A goes live, then quarterly.
+# Restores the latest database dump into a throwaway local Supabase on the runner, compares row
+# counts with the live database, and checks a sample of backed-up files against their SHA-256.
+# Needs read access to the backup bucket, which the nightly key doesn't have: add s3:GetObject to
+# the backup user's policy for the test, then remove it. See README "Backups".
+name: Restore test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-2
+  BACKUP_BUCKET: hsu-portal-backup-syd
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BACKUP_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BACKUP_SECRET_ACCESS_KEY }}
+  RESTORED_DB: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Download latest database dump
+        run: |
+          latest=$(aws s3 ls "s3://$BACKUP_BUCKET/db/" | awk '{print $2}' | sort | tail -1)
+          echo "Restoring dump $latest"
+          aws s3 cp --recursive "s3://$BACKUP_BUCKET/db/$latest" dump/
+          gunzip dump/*.gz
+          ls -l dump
+
+      - name: Start an empty local Supabase
+        run: |
+          mkdir restore && cd restore
+          supabase init
+          supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,mailpit,postgres-meta,postgrest
+
+      - name: Restore
+        run: |
+          start=$(date +%s)
+          psql "$RESTORED_DB" --single-transaction -v ON_ERROR_STOP=1 \
+            -f dump/roles.sql -f dump/schema.sql \
+            -c 'SET session_replication_role = replica' -f dump/data.sql > /dev/null
+          echo "Restored in $(( $(date +%s) - start ))s"
+
+      - name: Compare row counts with live
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          printf '%-32s %10s %10s\n' table restored live
+          for t in $(psql "$RESTORED_DB" -Atc "select schemaname||'.'||tablename from pg_tables where schemaname = 'public' order by 1") auth.users storage.objects; do
+            restored=$(psql "$RESTORED_DB" -Atc "select count(*) from $t")
+            live=$(psql "$SUPABASE_DB_URL" -Atc "select count(*) from $t")
+            flag=""; [ "$restored" = "$live" ] || flag="  <- differs (changed since the dump?)"
+            printf '%-32s %10s %10s%s\n' "$t" "$restored" "$live" "$flag"
+          done
+
+      - name: Check a sample of backed-up files
+        run: |
+          keys=$(aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix files/ --query 'Contents[].Key' --output text | tr '\t' '\n' | grep -v '^None$' | shuf -n 20 || true)
+          if [ -z "$keys" ]; then echo "No files backed up yet."; exit 0; fi
+          bad=0
+          while read -r key; do
+            expected=$(aws s3api head-object --bucket "$BACKUP_BUCKET" --key "$key" --query 'Metadata.sha256' --output text)
+            actual=$(aws s3 cp "s3://$BACKUP_BUCKET/$key" - | sha256sum | cut -d' ' -f1)
+            if [ "$expected" = "$actual" ]; then echo "OK   $key"; else echo "BAD  $key"; bad=1; fi
+          done <<< "$keys"
+          exit $bad
