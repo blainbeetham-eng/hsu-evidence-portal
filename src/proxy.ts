@@ -6,7 +6,7 @@ import { publicEnv } from "@/lib/env";
 // visitors to /login. This is an optimistic check only; pages re-check through
 // src/lib/dal.ts and the database enforces access with RLS.
 
-const PUBLIC_PATHS = ["/login", "/auth/", "/api/sync/"];
+const PUBLIC_PATHS = ["/login", "/auth/", "/api/sync/", "/api/inbound/", "/manifest.webmanifest"];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });

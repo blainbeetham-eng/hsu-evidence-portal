@@ -13,6 +13,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <Link href="/">Overview</Link>
           <Link href="/properties">Properties</Link>
           <Link href="/work-orders">Work orders</Link>
+          <Link href="/review">Review</Link>
+          <Link href="/inbox">Inbox</Link>
+          <Link href="/field-team">Field team</Link>
         </nav>
         <span className="who">{viewer.email}</span>
         <form action={signOut}>

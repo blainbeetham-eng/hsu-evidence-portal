@@ -20,4 +20,7 @@ export const serverEnv = {
   anthropicApiKey: () => required("ANTHROPIC_API_KEY"),
   anthropicModel: () => process.env.ANTHROPIC_MODEL || "claude-opus-5-5",
   googleServiceAccountJson: () => required("GOOGLE_SERVICE_ACCOUNT_JSON"),
+  // Email-in (Phase 2B). Optional: until both are set, /api/inbound/email answers 503.
+  resendApiKey: () => process.env.RESEND_API_KEY ?? "",
+  resendWebhookSecret: () => process.env.RESEND_WEBHOOK_SECRET ?? "",
 };

@@ -167,8 +167,17 @@ function tusUpload(file: File | Blob, path: string, contentType: string, token: 
 
 const safeName = (name: string) => name.replace(/[^A-Za-z0-9._-]+/g, "_").slice(-120);
 
-export function UploadPanel({ propertyId, workOrders }: { propertyId: string; workOrders: { id: string; label: string }[] }) {
+export function UploadPanel({
+  propertyId,
+  workOrders,
+  stage = "assessment",
+}: {
+  propertyId: string;
+  workOrders: { id: string; label: string }[];
+  stage?: "assessment" | "works";
+}) {
   const [workOrderId, setWorkOrderId] = useState(workOrders[0]?.id ?? "");
+  const [phase, setPhase] = useState<"before" | "during" | "after">("after");
   const [status, setStatus] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -210,6 +219,7 @@ export function UploadPanel({ propertyId, workOrders }: { propertyId: string; wo
         log(i, `${file.name}: saving`);
         const r = await recordUpload({
           propertyId, workOrderId, path, posterPath, fileName: file.name, mime, size: file.size, sha256, takenAt, durationS,
+          stage, phase: stage === "works" ? phase : null,
         });
         log(i, `${file.name}: ${r.message}`);
       } catch (e) {
@@ -223,10 +233,20 @@ export function UploadPanel({ propertyId, workOrders }: { propertyId: string; wo
   return (
     <div className="card stack">
       <div className="row">
-        <label htmlFor="wo">Attach to</label>
-        <select id="wo" value={workOrderId} onChange={(e) => setWorkOrderId(e.target.value)} disabled={busy}>
+        <label htmlFor={`wo-${stage}`}>Attach to</label>
+        <select id={`wo-${stage}`} value={workOrderId} onChange={(e) => setWorkOrderId(e.target.value)} disabled={busy}>
           {workOrders.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
         </select>
+        {stage === "works" && (
+          <>
+            <label htmlFor={`phase-${stage}`}>Photos are</label>
+            <select id={`phase-${stage}`} value={phase} onChange={(e) => setPhase(e.target.value as typeof phase)} disabled={busy}>
+              <option value="before">Before</option>
+              <option value="during">During</option>
+              <option value="after">After</option>
+            </select>
+          </>
+        )}
       </div>
       <input
         type="file"
@@ -236,8 +256,10 @@ export function UploadPanel({ propertyId, workOrders }: { propertyId: string; wo
         onChange={(e) => { if (e.target.files?.length) void upload(e.target.files); e.target.value = ""; }}
       />
       <p className="muted small">
-        Reports (PDF), photos and the DI video (MP4 or MOV, up to 2 GB). Keep this page open until each file says
-        &ldquo;Uploaded&rdquo;.
+        {stage === "works"
+          ? "Works photos and documents (certificates, product datasheets as PDF). Your uploads count as accepted; file photos into a checklist slot below."
+          : "Reports (PDF), photos and the DI video (MP4 or MOV, up to 2 GB)."}{" "}
+        Keep this page open until each file says &ldquo;Uploaded&rdquo;.
       </p>
       {status.map((s, i) => <p key={i} className="small">{s}</p>)}
     </div>

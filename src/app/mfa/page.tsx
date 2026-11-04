@@ -7,6 +7,7 @@ export const metadata = { title: "Two-step verification — HomeStar Evidence Po
 export default async function MfaPage() {
   const viewer = await getViewer();
   if (!viewer) redirect("/login");
+  if (viewer.role === "field_team") redirect("/field");
   if (viewer.aal === "aal2") redirect("/");
 
   return (

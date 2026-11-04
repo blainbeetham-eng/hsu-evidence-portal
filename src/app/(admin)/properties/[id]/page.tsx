@@ -6,6 +6,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { AIRTABLE_BASE_ID, TABLES } from "@/lib/airtable/allowlist";
 import { SUMMARY_FOOTER, looksLikeContactDetails } from "@/lib/summary";
 import { GenerateSummaryButton, HideToggle, ImportButton, SummaryActions, UploadPanel } from "./assessment-client";
+import { CompletionStage, WorksStage, type JobItem, type Note, type UStatus, type WFile, type WSummary } from "./works-section";
 
 export const metadata = { title: "Property — HomeStar Evidence Portal" };
 // Import from Drive and AI summaries run inside this page's server actions.
@@ -17,7 +18,7 @@ const LANDLORD_CONSENT_OK = ["Granted", "Agency Notified"];
 type EvidenceFile = {
   id: string; work_order_id: string; kind: "report" | "photo" | "video"; storage_path: string; poster_path: string | null;
   file_name: string; mime: string | null; size_bytes: number | null; source: string; taken_at: string | null;
-  duration_s: number | null; hidden: boolean; created_at: string;
+  duration_s: number | null; hidden: boolean; created_at: string; stage: string; review_status: string;
 };
 type Summary = {
   id: string; report_id: string; version: number; body: string; status: string; source: string; model: string | null;
@@ -58,14 +59,17 @@ export default async function PropertyPage({
       ? supabase.from("contacts").select("id, name, email, consent_status, removed_at").in("id", landlordIds)
       : Promise.resolve({ data: [] as { id: string; name: string | null; email: string | null; consent_status: string | null; removed_at: string | null }[] }),
     woIds.length
-      ? supabase.from("evidence_files").select("*").in("work_order_id", woIds).eq("stage", "assessment").is("deleted_at", null)
+      ? supabase.from("evidence_files").select("*").in("work_order_id", woIds).is("deleted_at", null)
           .order("taken_at", { ascending: true, nullsFirst: false }).order("created_at")
       : Promise.resolve({ data: [] as EvidenceFile[] }),
   ]);
 
   // In preview, show exactly what the landlord's own access would show (the same rules as RLS).
-  const allFiles = (fileRows ?? []) as EvidenceFile[];
+  const everyFile = (fileRows ?? []) as (EvidenceFile & WFile)[];
+  const allFiles = everyFile.filter((f) => f.stage === "assessment");
   const files = preview ? allFiles.filter((f) => !f.hidden) : allFiles;
+  // Works files: in preview only accepted, visible ones (as RLS gives the landlord).
+  const worksFiles = everyFile.filter((f) => f.stage !== "assessment" && (!preview || (f.review_status === "accepted" && !f.hidden)));
   const reports = files.filter((f) => f.kind === "report");
   const photos = files.filter((f) => f.kind === "photo");
   const videos = files.filter((f) => f.kind === "video");
@@ -80,17 +84,28 @@ export default async function PropertyPage({
       : Promise.resolve({ data: [] as { report_id: string; di_report_url: string | null }[] }),
   ]);
   const summaries = (summaryRows ?? []) as Summary[];
+
+  const [{ data: assignRows }, { data: itemRows }, { data: statusRows }, { data: writtenRows }, { data: noteRows }] = await Promise.all([
+    woIds.length ? supabase.from("field_assignments").select("work_order_id").in("work_order_id", woIds).is("ended_at", null) : Promise.resolve({ data: [] }),
+    woIds.length ? supabase.from("job_items").select("*").in("work_order_id", woIds).order("created_at") : Promise.resolve({ data: [] }),
+    woIds.length ? supabase.from("upgrade_status").select("*").in("work_order_id", woIds).order("set_at", { ascending: false }) : Promise.resolve({ data: [] }),
+    supabase.from("written_summaries").select("*").eq("property_id", id).order("version", { ascending: false }),
+    supabase.from("notes").select("*").eq("property_id", id).is("deleted_at", null).order("created_at"),
+  ]);
+  const { data: reportRows } = await supabase.from("completion_reports").select("id, storage_path, generated_at").eq("property_id", id).order("generated_at", { ascending: false });
+  const fieldAssigned = new Set((assignRows ?? []).map((a: { work_order_id: string }) => a.work_order_id));
+  const written = ((writtenRows ?? []) as WSummary[]).filter((s) => !preview || s.status === "published");
   const diLink = new Map((extras ?? []).map((e) => [e.report_id, e.di_report_url]));
 
   // Short-lived links: originals, plus small resized copies for photo thumbnails.
-  const paths = files.flatMap((f) => [f.storage_path, ...(f.poster_path ? [f.poster_path] : [])]);
+  const paths = [...[...files, ...worksFiles].flatMap((f) => [f.storage_path, ...(f.poster_path ? [f.poster_path] : [])]), ...(reportRows ?? []).map((r) => r.storage_path)];
   const { data: signed } = paths.length
     ? await supabase.storage.from("evidence").createSignedUrls(paths, SIGNED_URL_SECONDS)
     : { data: [] };
   const url = new Map<string, string>((signed ?? []).flatMap((s) => (s.path && s.signedUrl ? [[s.path, s.signedUrl] as [string, string]] : [])));
   const thumbs = new Map(
     await Promise.all(
-      photos
+      [...photos, ...worksFiles.filter((f) => f.kind === "photo")]
         .filter((f) => f.mime === "image/jpeg" || f.mime === "image/png" || f.mime === "image/webp")
         .map(async (f) => {
           const { data } = await supabase.storage
@@ -106,6 +121,7 @@ export default async function PropertyPage({
     ...new Map(workOrders.filter((w) => w.drive_folder_url && !w.removed_at).map((w) => [w.drive_folder_url, w])).values(),
   ];
   const woLabel = new Map(workOrders.map((w) => [w.id, w.activity_type ?? "Work order"]));
+  const ctx = { propertyId: id, preview, url, thumbs };
   const airtableUrl = `https://airtable.com/${AIRTABLE_BASE_ID}/${TABLES.properties.tableId}/${p.id}`;
 
   return (
@@ -257,6 +273,25 @@ export default async function PropertyPage({
           ))}
         </>
       )}
+
+      <WorksStage
+        ctx={ctx}
+        workOrders={workOrders}
+        files={worksFiles}
+        items={(itemRows ?? []) as JobItem[]}
+        fieldAssigned={fieldAssigned}
+        summaries={written}
+        notes={(noteRows ?? []) as Note[]}
+        leaseDate={p.lease_renewal_date_override ?? p.lease_renewal_date}
+      />
+      <CompletionStage
+        ctx={ctx}
+        workOrders={workOrders}
+        statuses={(statusRows ?? []) as UStatus[]}
+        summaries={written}
+        notes={(noteRows ?? []) as Note[]}
+        reports={(reportRows ?? []).map((r) => ({ id: r.id, generated_at: r.generated_at, url: url.get(r.storage_path) ?? null }))}
+      />
 
       {!preview && (
         <>

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 export type Viewer = {
   userId: string;
   email: string | null;
-  role: "admin" | "agency_user" | "landlord" | "installer" | null;
+  role: "admin" | "agency_user" | "landlord" | "installer" | "field_team" | null;
   aal: "aal1" | "aal2";
   hasVerifiedTotp: boolean;
 };
@@ -39,7 +39,24 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
 export async function requireAdmin(): Promise<Viewer> {
   const viewer = await getViewer();
   if (!viewer) redirect("/login");
+  if (viewer.role === "field_team") redirect("/field");
   if (viewer.aal !== "aal2") redirect("/mfa");
   if (viewer.role !== "admin") redirect("/no-access");
   return viewer;
+}
+
+/**
+ * Phase 2B field team pages (phone capture). The field team signs in with an email link
+ * and no authenticator app: they can only add draft photos to jobs assigned to them, and
+ * see the address and upgrade of those jobs. Admin (with MFA) may open the same pages.
+ */
+export async function requireFieldUser(): Promise<Viewer> {
+  const viewer = await getViewer();
+  if (!viewer) redirect("/login");
+  if (viewer.role === "field_team") return viewer;
+  if (viewer.role === "admin") {
+    if (viewer.aal !== "aal2") redirect("/mfa");
+    return viewer;
+  }
+  redirect("/no-access");
 }

@@ -166,14 +166,19 @@ export type UploadRecord = {
   sha256: string;
   takenAt: string | null;
   durationS: number | null;
+  stage: "assessment" | "works";
+  phase: "before" | "during" | "after" | null;
 };
 
 /** Called after the browser has uploaded a file straight to Storage. */
 export async function recordUpload(u: UploadRecord): Promise<ActionResult> {
   const viewer = await requireAdmin();
   const supabase = await createClient();
-  const kind = KIND_BY_MIME[u.mime];
-  if (!kind) return { ok: false, message: "That file type isn't accepted." };
+  const mimeKind = KIND_BY_MIME[u.mime];
+  if (!mimeKind) return { ok: false, message: "That file type isn't accepted." };
+  if (u.stage !== "assessment" && u.stage !== "works") return { ok: false, message: "Pick Assessment or Works." };
+  // In the Works stage a PDF is a document (certificate, datasheet), not an assessment report.
+  const kind = u.stage === "works" && mimeKind === "report" ? "document" : mimeKind;
   if (!u.path.startsWith(`${u.workOrderId}/`) || !/^[0-9a-f]{64}$/.test(u.sha256)) {
     return { ok: false, message: "Upload details didn't check out." };
   }
@@ -200,6 +205,8 @@ export async function recordUpload(u: UploadRecord): Promise<ActionResult> {
       size_bytes: u.size,
       sha256: u.sha256,
       source: "admin_upload",
+      stage: u.stage,
+      phase: u.stage === "works" && kind === "photo" ? u.phase : null,
       taken_at: u.takenAt,
       duration_s: u.durationS,
       uploaded_by: viewer.userId,

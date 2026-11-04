@@ -107,3 +107,20 @@ figure.video video { width: 100%; max-width: 720px; border-radius: 8px; backgrou
   .shell-header { height: auto; padding: 0.75rem 1rem; gap: 0.5rem 1rem; }
   .shell-main { padding: 1rem; }
 }
+
+/* Phase 2B: Works stage, review, field team */
+h4 { font-size: 0.95rem; margin: 0.75rem 0 0.4rem; }
+.checklist-item { border-top: 1px solid var(--border); padding-top: 0.5rem; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; }
+.pair figure { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.pair img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.pair figcaption { padding: 0.35rem 0.5rem; }
+.note { border-left: 3px solid var(--border); padding-left: 0.6rem; }
+.field-main { max-width: 640px; margin: 0 auto; padding: 1rem; }
+.field-main button { min-height: 44px; }
+.slot-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.slot-row img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
+.camera { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; }
+.camera input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.queue-bar { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 0.6rem 0; }
+label.button { background: var(--green); color: #fff; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 6px; min-height: 44px; }
