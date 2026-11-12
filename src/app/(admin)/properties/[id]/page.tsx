@@ -42,7 +42,7 @@ export default async function PropertyPage({
 
   const { data: wos } = await supabase
     .from("work_orders")
-    .select("id, activity_type, pipeline_status, source_order_ref, landlord_ids, is_test, removed_at, drive_folder_url")
+    .select("id, activity_type, pipeline_status, source_order_ref, landlord_ids, is_test, removed_at, drive_folder_url, ai_job_summary")
     .eq("property_id", id)
     .order("activity_type");
   const workOrders = wos ?? [];

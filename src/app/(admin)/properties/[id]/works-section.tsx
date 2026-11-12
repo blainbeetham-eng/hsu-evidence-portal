@@ -13,7 +13,10 @@ export type WFile = {
   review_status: string; review_note: string | null; phase: string | null; job_item_id: string | null;
   checklist_key: string | null; flags: string[]; geo_source: string | null; accuracy_m: number | null; received_from: string | null;
 };
-export type WOrder = { id: string; activity_type: string | null; pipeline_status: string | null; source_order_ref: string | null; removed_at: string | null };
+export type WOrder = {
+  id: string; activity_type: string | null; pipeline_status: string | null; source_order_ref: string | null; removed_at: string | null;
+  ai_job_summary?: string | null; // Airtable AI Job Summary: the supplier scope, incl. details from the PM's email. Admin only.
+};
 export type JobItem = { id: string; work_order_id: string; kind: string; label: string; details: Record<string, string>; removed_at: string | null };
 export type WSummary = { id: string; work_order_id: string | null; kind: string; version: number; body: string; status: string; created_at: string; published_at: string | null };
 export type Note = { id: string; work_order_id: string | null; body: string; visibility: string; created_at: string };
@@ -137,6 +140,14 @@ function WorkBlock({ ctx, wo, files, items, assigned, summaries, notes, leaseDat
         {!ctx.preview && <FieldToggle propertyId={ctx.propertyId} workOrderId={wo.id} assigned={assigned} />}
       </div>
       <p className="small muted">{app.text}</p>
+
+      {!ctx.preview && wo.ai_job_summary && (
+        <details className="small">
+          <summary>Job scope from the agency email and report (HSU only)</summary>
+          <p className="pre">{wo.ai_job_summary}</p>
+          <p className="muted">From Airtable (AI Job Summary). This is what suppliers see when quoting. Not shown to landlords or agencies.</p>
+        </details>
+      )}
 
       {(summary || !ctx.preview) && (
         <div className="summary">
