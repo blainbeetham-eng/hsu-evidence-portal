@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 3.1.0 # pinned, same as nightly-backup.yml
 
       - name: Download latest database dump
         run: |

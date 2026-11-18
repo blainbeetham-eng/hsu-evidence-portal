@@ -40,7 +40,10 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned: "latest" asks GitHub's API which version is newest, and that call
+          # hit a rate limit on 18 Nov 2026 and failed the run. 3.1.0 is the version the
+          # successful runs used. Bump deliberately, then run the workflow by hand to check.
+          version: 3.1.0
 
       - name: Dump database
         env:
