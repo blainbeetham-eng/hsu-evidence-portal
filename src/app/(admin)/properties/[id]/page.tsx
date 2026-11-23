@@ -6,6 +6,8 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { AIRTABLE_BASE_ID, TABLES } from "@/lib/airtable/allowlist";
 import { SUMMARY_FOOTER, looksLikeContactDetails } from "@/lib/summary";
 import { GenerateSummaryButton, HideToggle, ImportButton, SummaryActions, UploadPanel } from "./assessment-client";
+import { QUOTE_PHOTO_KEY } from "@/lib/quote-visit";
+import { QuoteVisitSection } from "./quote-section";
 import { CompletionStage, WorksStage, type JobItem, type Note, type UStatus, type WFile, type WSummary } from "./works-section";
 
 export const metadata = { title: "Property — HomeStar Evidence Portal" };
@@ -19,6 +21,7 @@ type EvidenceFile = {
   id: string; work_order_id: string; kind: "report" | "photo" | "video"; storage_path: string; poster_path: string | null;
   file_name: string; mime: string | null; size_bytes: number | null; source: string; taken_at: string | null;
   duration_s: number | null; hidden: boolean; created_at: string; stage: string; review_status: string;
+  checklist_key: string | null; job_item_id: string | null;
 };
 type Summary = {
   id: string; report_id: string; version: number; body: string; status: string; source: string; model: string | null;
@@ -71,7 +74,9 @@ export default async function PropertyPage({
   // Works files: in preview only accepted, visible ones (as RLS gives the landlord).
   const worksFiles = everyFile.filter((f) => f.stage !== "assessment" && (!preview || (f.review_status === "accepted" && !f.hidden)));
   const reports = files.filter((f) => f.kind === "report");
-  const photos = files.filter((f) => f.kind === "photo");
+  // Quote visit photos have their own section (admin only), not Assessment photos.
+  const photos = files.filter((f) => f.kind === "photo" && f.checklist_key !== QUOTE_PHOTO_KEY);
+  const quotePhotos = preview ? [] : allFiles.filter((f) => f.kind === "photo" && f.checklist_key === QUOTE_PHOTO_KEY);
   const videos = files.filter((f) => f.kind === "video");
 
   const reportIds = reports.map((r) => r.id);
@@ -92,6 +97,10 @@ export default async function PropertyPage({
     supabase.from("written_summaries").select("*").eq("property_id", id).order("version", { ascending: false }),
     supabase.from("notes").select("*").eq("property_id", id).is("deleted_at", null).order("created_at"),
   ]);
+  const { data: visitRows } = woIds.length && !preview
+    ? await supabase.from("quote_visits").select("work_order_id, answers").in("work_order_id", woIds)
+    : { data: [] as { work_order_id: string; answers: Record<string, string> }[] };
+  const quoteAnswers = new Map((visitRows ?? []).map((v) => [v.work_order_id, (v.answers ?? {}) as Record<string, string>]));
   const { data: reportRows } = await supabase.from("completion_reports").select("id, storage_path, generated_at").eq("property_id", id).order("generated_at", { ascending: false });
   const fieldAssigned = new Set((assignRows ?? []).map((a: { work_order_id: string }) => a.work_order_id));
   const written = ((writtenRows ?? []) as WSummary[]).filter((s) => !preview || s.status === "published");
@@ -105,7 +114,7 @@ export default async function PropertyPage({
   const url = new Map<string, string>((signed ?? []).flatMap((s) => (s.path && s.signedUrl ? [[s.path, s.signedUrl] as [string, string]] : [])));
   const thumbs = new Map(
     await Promise.all(
-      [...photos, ...worksFiles.filter((f) => f.kind === "photo")]
+      [...photos, ...quotePhotos, ...worksFiles.filter((f) => f.kind === "photo")]
         .filter((f) => f.mime === "image/jpeg" || f.mime === "image/png" || f.mime === "image/webp")
         .map(async (f) => {
           const { data } = await supabase.storage
@@ -276,6 +285,18 @@ export default async function PropertyPage({
             </figure>
           ))}
         </>
+      )}
+
+      {!preview && (
+        <QuoteVisitSection
+          propertyId={id}
+          workOrders={workOrders}
+          items={(itemRows ?? []) as JobItem[]}
+          answers={quoteAnswers}
+          photos={quotePhotos}
+          url={url}
+          thumbs={thumbs}
+        />
       )}
 
       <WorksStage

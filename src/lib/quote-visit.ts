@@ -32,7 +32,12 @@ export const PREFIX = "q_";
 
 const NOTE: QField = { key: "note", label: "Notes", type: "text" };
 
-const DRAUGHT_NEEDS = ["Full perimeter", "Bottom seal only", "Part of frame", "Nothing needed"];
+const QTY: QField = {
+  key: "qty", label: "How many like this", type: "number", unit: "count",
+  help: "e.g. 2 for a pair of French doors (measure one leaf) or two matching windows. Blank means 1.",
+};
+
+const DRAUGHT_NEEDS =["Full perimeter", "Bottom seal only", "Part of frame", "Nothing needed"];
 
 export const QUOTE_DEFS: Record<string, QuoteDef> = {
   draughtproofing: {
@@ -47,6 +52,7 @@ export const QUOTE_DEFS: Record<string, QuoteDef> = {
           { key: "type", label: "Door type", type: "choice", options: ["Hinged", "French (pair)", "Sliding", "Bi-fold", "Other"] },
           { key: "width_mm", label: "Width", type: "number", unit: "mm" },
           { key: "height_mm", label: "Height", type: "number", unit: "mm" },
+          QTY,
           { key: "needs", label: "Sealing needed", type: "choice", options: DRAUGHT_NEEDS },
           NOTE,
         ],
@@ -57,6 +63,7 @@ export const QUOTE_DEFS: Record<string, QuoteDef> = {
           { key: "type", label: "Window type", type: "choice", options: ["Double-hung sash", "Awning", "Casement", "Sliding", "Louvre", "Fixed", "Other"] },
           { key: "width_mm", label: "Width", type: "number", unit: "mm" },
           { key: "height_mm", label: "Height", type: "number", unit: "mm" },
+          QTY,
           { key: "needs", label: "Sealing needed", type: "choice", options: DRAUGHT_NEEDS },
           NOTE,
         ],
@@ -228,21 +235,28 @@ export function mergeWorksDetails(details: Record<string, string> | null | undef
 const num = (v: string | undefined) => (v === undefined || v === "" ? null : Number(v));
 const fmt = (n: number, dp = 1) => (Math.round(n * 10 ** dp) / 10 ** dp).toLocaleString("en-AU");
 
-/** Seal length for a door or window from its quote values, in metres (null if not measurable). */
+/** How many identical doors or windows one entry covers (blank or 0 means 1). */
+export function qty(v: Record<string, string>): number {
+  const n = num(v.qty);
+  return n && n >= 1 ? Math.round(n) : 1;
+}
+
+/** Seal length for a door or window entry from its quote values, in metres, times its quantity (null if not measurable). */
 export function sealMetres(kind: string, v: Record<string, string>): number | null {
   if (kind !== "door" && kind !== "window") return null;
   if (!v.needs || v.needs === "Nothing needed") return null;
   const w = num(v.width_mm), h = num(v.height_mm);
-  if (v.needs === "Bottom seal only") return w ? w / 1000 : null;
+  if (v.needs === "Bottom seal only") return w ? (w / 1000) * qty(v) : null;
   if (!w || !h) return null;
-  return (2 * (w + h)) / 1000; // full perimeter; "Part of frame" is shown as up to the full perimeter
+  return ((2 * (w + h)) / 1000) * qty(v); // full perimeter; "Part of frame" is shown as up to the full perimeter
 }
 
 export function totals(def: QuoteDef, items: QItem[], answers: Record<string, string>): Total[] {
   const out: Total[] = [];
   const q = items.map((i) => ({ ...i, v: quoteValues(i.details) }));
   if (def.id === "draughtproofing") {
-    const needing = (kind: string) => q.filter((i) => i.kind === kind && i.v.needs && i.v.needs !== "Nothing needed" && i.v.needs !== "no").length;
+    const needing = (kind: string) =>
+      q.filter((i) => i.kind === kind && i.v.needs && i.v.needs !== "Nothing needed" && i.v.needs !== "no").reduce((s, i) => s + qty(i.v), 0);
     const doors = needing("door"), windows = needing("window");
     const vents = q.filter((i) => i.kind === "vent" && i.v.needs === "yes").length;
     const metres = q.reduce((s, i) => s + (sealMetres(i.kind, i.v) ?? 0), 0);
@@ -285,8 +299,8 @@ export function visitText(def: QuoteDef, items: QItem[], answers: Record<string,
     const v = quoteValues(i.details);
     const parts = k.fields.filter((f) => v[f.key]).map((f) => (f.key === "note" ? v[f.key] : `${f.label.toLowerCase()} ${show(f, v[f.key])}`));
     if (v.width_mm && v.height_mm) {
-      parts.splice(0, parts.length, ...parts.filter((p) => !p.startsWith("width") && !p.startsWith("height")));
-      parts.unshift(`${v.width_mm} x ${v.height_mm} mm`);
+      parts.splice(0, parts.length, ...parts.filter((p) => !p.startsWith("width") && !p.startsWith("height") && !p.startsWith("how many")));
+      parts.unshift(`${v.width_mm} x ${v.height_mm} mm${qty(v) > 1 ? ` (x${qty(v)})` : ""}`);
     }
     lines.push(`- ${i.label} (${k.label.toLowerCase()}): ${parts.join("; ") || "not measured"}`);
   }

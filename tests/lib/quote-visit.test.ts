@@ -61,6 +61,17 @@ describe("totals", () => {
     ]);
   });
 
+  it("multiplies French door pairs and matching windows", () => {
+    expect(sealMetres("door", { width_mm: "810", height_mm: "2000", needs: "Full perimeter", qty: "2" })).toBeCloseTo(11.24);
+    const t = totals(D, [
+      item("door", "Side door", { width_mm: "810", height_mm: "2000", needs: "Full perimeter", qty: "2" }),
+      item("window", "Bed 1", { width_mm: "800", height_mm: "1000", needs: "Full perimeter", qty: "2" }),
+    ], {});
+    expect(t.slice(0, 2)).toEqual([{ label: "Doors needing sealing", value: "2" }, { label: "Windows needing sealing", value: "2" }]);
+    expect(t[3]).toEqual({ label: "Seal length", value: "18.4 m" });
+    expect(visitText(D, [item("door", "Side door", { width_mm: "810", height_mm: "2000", qty: "2" })], {})).toContain("810 x 2000 mm (x2)");
+  });
+
   it("works out room area for heating and cooling", () => {
     const t = totals(QUOTE_DEFS.heating_cooling, [item("room", "Living", { length_m: "7.734", width_m: "4.655", height_m: "2.4" })], {});
     expect(t).toEqual([{ label: "Living area", value: "36 m² (86.4 m³)" }]);
