@@ -53,7 +53,8 @@ export const QUOTE_DEFS: Record<string, QuoteDef> = {
           { key: "width_mm", label: "Width", type: "number", unit: "mm" },
           { key: "height_mm", label: "Height", type: "number", unit: "mm" },
           QTY,
-          { key: "needs", label: "Sealing needed", type: "choice", options: DRAUGHT_NEEDS },
+          { key: "needs", label: "Sealing needed", type: "choice", options: DRAUGHT_NEEDS,
+            help: "Full perimeter = V-seal on both sides and the top, plus a sweep at the bottom. Bottom seal only = sweep only." },
           NOTE,
         ],
       },
@@ -241,14 +242,30 @@ export function qty(v: Record<string, string>): number {
   return n && n >= 1 ? Math.round(n) : 1;
 }
 
-/** Seal length for a door or window entry from its quote values, in metres, times its quantity (null if not measurable). */
+/**
+ * V-seal length for a door or window entry, in metres, times its quantity (null if not measured).
+ * Doors: both sides and the top (2 x height + width); the bottom gets a door sweep instead
+ * (Blain, 24 Nov 2026), so "Bottom seal only" needs no V-seal. Windows: full perimeter.
+ * "Part of frame" counts as up to the full amount.
+ */
 export function sealMetres(kind: string, v: Record<string, string>): number | null {
   if (kind !== "door" && kind !== "window") return null;
   if (!v.needs || v.needs === "Nothing needed") return null;
   const w = num(v.width_mm), h = num(v.height_mm);
-  if (v.needs === "Bottom seal only") return w ? (w / 1000) * qty(v) : null;
+  if (v.needs === "Bottom seal only") {
+    if (kind === "door") return w ? 0 : null;
+    return w ? (w / 1000) * qty(v) : null;
+  }
   if (!w || !h) return null;
-  return ((2 * (w + h)) / 1000) * qty(v); // full perimeter; "Part of frame" is shown as up to the full perimeter
+  const mm = kind === "door" ? 2 * h + w : 2 * (w + h);
+  return (mm / 1000) * qty(v);
+}
+
+/** Door sweeps for a door entry: how many, and their total width in metres (null if not a door needing one). */
+export function sweeps(kind: string, v: Record<string, string>): { count: number; metres: number | null } | null {
+  if (kind !== "door" || !v.needs || v.needs === "Nothing needed") return null;
+  const w = num(v.width_mm);
+  return { count: qty(v), metres: w ? (w / 1000) * qty(v) : null };
 }
 
 export function totals(def: QuoteDef, items: QItem[], answers: Record<string, string>): Total[] {
@@ -265,7 +282,12 @@ export function totals(def: QuoteDef, items: QItem[], answers: Record<string, st
     out.push({ label: "Doors needing sealing", value: String(doors) });
     out.push({ label: "Windows needing sealing", value: String(windows) });
     out.push({ label: "Vents to seal", value: String(vents) });
-    out.push({ label: partial ? "Seal length (up to)" : "Seal length", value: `${fmt(metres)} m` });
+    out.push({ label: partial ? "V-seal length (up to)" : "V-seal length", value: `${fmt(metres)} m` });
+    const sw = q.flatMap((i) => sweeps(i.kind, i.v) ?? []);
+    if (sw.length) {
+      const width = sw.reduce((s, x) => s + (x.metres ?? 0), 0);
+      out.push({ label: "Door sweeps", value: `${sw.reduce((s, x) => s + x.count, 0)} (${fmt(width)} m total width)` });
+    }
     if (unmeasured) out.push({ label: "Still to measure", value: `${unmeasured} door${unmeasured === 1 ? "" : "s"} or window${unmeasured === 1 ? "" : "s"}` });
   } else if (def.id === "showerhead") {
     const shows = q.filter((i) => i.kind === "showerhead");

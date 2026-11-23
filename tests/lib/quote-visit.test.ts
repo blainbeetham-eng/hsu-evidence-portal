@@ -42,9 +42,10 @@ describe("details merging", () => {
 describe("totals", () => {
   const item = (kind: string, label: string, v: Record<string, string>) => ({ id: label, kind, label, details: mergeQuoteDetails({}, v) });
 
-  it("adds up draughtproofing seal length", () => {
-    expect(sealMetres("door", { width_mm: "820", height_mm: "2040", needs: "Full perimeter" })).toBeCloseTo(5.72);
-    expect(sealMetres("door", { width_mm: "820", needs: "Bottom seal only" })).toBeCloseTo(0.82);
+  it("adds up V-seal: doors on 3 sides (bottom gets a sweep), windows all round", () => {
+    expect(sealMetres("door", { width_mm: "820", height_mm: "2040", needs: "Full perimeter" })).toBeCloseTo(4.9);
+    expect(sealMetres("door", { width_mm: "820", needs: "Bottom seal only" })).toBe(0);
+    expect(sealMetres("window", { width_mm: "1000", height_mm: "1200", needs: "Full perimeter" })).toBeCloseTo(4.4);
     expect(sealMetres("window", { width_mm: "1000", height_mm: "1000", needs: "Nothing needed" })).toBeNull();
     const t = totals(D, [
       item("door", "Front door", { width_mm: "820", height_mm: "2040", needs: "Full perimeter" }),
@@ -56,19 +57,21 @@ describe("totals", () => {
       { label: "Doors needing sealing", value: "1" },
       { label: "Windows needing sealing", value: "2" },
       { label: "Vents to seal", value: "1" },
-      { label: "Seal length", value: "10.1 m" },
+      { label: "V-seal length", value: "9.3 m" },
+      { label: "Door sweeps", value: "1 (0.8 m total width)" },
       { label: "Still to measure", value: "1 door or window" },
     ]);
   });
 
   it("multiplies French door pairs and matching windows", () => {
-    expect(sealMetres("door", { width_mm: "810", height_mm: "2000", needs: "Full perimeter", qty: "2" })).toBeCloseTo(11.24);
+    expect(sealMetres("door", { width_mm: "810", height_mm: "2000", needs: "Full perimeter", qty: "2" })).toBeCloseTo(9.62);
     const t = totals(D, [
       item("door", "Side door", { width_mm: "810", height_mm: "2000", needs: "Full perimeter", qty: "2" }),
       item("window", "Bed 1", { width_mm: "800", height_mm: "1000", needs: "Full perimeter", qty: "2" }),
     ], {});
     expect(t.slice(0, 2)).toEqual([{ label: "Doors needing sealing", value: "2" }, { label: "Windows needing sealing", value: "2" }]);
-    expect(t[3]).toEqual({ label: "Seal length", value: "18.4 m" });
+    expect(t[3]).toEqual({ label: "V-seal length", value: "16.8 m" });
+    expect(t[4]).toEqual({ label: "Door sweeps", value: "2 (1.6 m total width)" });
     expect(visitText(D, [item("door", "Side door", { width_mm: "810", height_mm: "2000", qty: "2" })], {})).toContain("810 x 2000 mm (x2)");
   });
 
