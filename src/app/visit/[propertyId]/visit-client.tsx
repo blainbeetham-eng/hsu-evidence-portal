@@ -46,6 +46,16 @@ function position(): Promise<GeolocationPosition | null> {
     navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }),
   );
 }
+/** The bytes of a photo, or null if the phone can't read it (or it's empty). */
+async function readBytes(b: Blob): Promise<ArrayBuffer | null> {
+  try {
+    const buf = await b.arrayBuffer();
+    return buf.byteLength > 0 ? buf : null;
+  } catch {
+    return null;
+  }
+}
+
 function subscribeOnline(cb: () => void) {
   window.addEventListener("online", cb);
   window.addEventListener("offline", cb);
@@ -80,16 +90,21 @@ export function VisitJob({ propertyId, workOrderId, def, items, answers, photos 
     running.current = true;
     try {
       const supabase = createClient();
+      let unreadable = 0;
       for (const q of (await queueAll()).filter((x) => x.workOrderId === workOrderId)) {
         if (!navigator.onLine) break;
+        // A photo saved before 23 Nov's fix may have lost its contents on iPhone: drop it.
+        const bytes = await readBytes(q.blob);
+        if (!bytes) { await queueDelete(q.id); unreadable++; continue; }
         try {
           const hasher = await createSHA256();
-          hasher.update(new Uint8Array(await q.blob.arrayBuffer()));
+          hasher.update(new Uint8Array(bytes));
           const sha256 = hasher.digest("hex");
-          const { error } = await supabase.storage.from("evidence").upload(q.path, q.blob, { contentType: q.mime, upsert: false });
+          // Send the bytes themselves (not the Blob), so the upload can't go out empty.
+          const { error } = await supabase.storage.from("evidence").upload(q.path, bytes, { contentType: q.mime, upsert: false });
           if (error && !/exist|duplicate/i.test(error.message)) throw new Error(error.message);
           const r = await recordQuotePhoto({
-            workOrderId, path: q.path, fileName: q.name, mime: q.mime, size: q.blob.size, sha256, capturedAt: q.capturedAt,
+            workOrderId, path: q.path, fileName: q.name, mime: q.mime, size: bytes.byteLength, sha256, capturedAt: q.capturedAt,
             lat: q.lat, lng: q.lng, accuracyM: q.accuracy, jobItemId: q.jobItemId,
           });
           if (!r.ok) throw new Error(r.message);
@@ -99,6 +114,7 @@ export function VisitJob({ propertyId, workOrderId, def, items, answers, photos 
           break;
         }
       }
+      if (unreadable) setNote(`${unreadable} photo${unreadable === 1 ? "" : "s"} couldn't be read back from this phone and ${unreadable === 1 ? "was" : "were"} removed from the queue. Please add ${unreadable === 1 ? "it" : "them"} again.`);
     } finally {
       running.current = false;
       await reload();
@@ -118,10 +134,14 @@ export function VisitJob({ propertyId, workOrderId, def, items, answers, photos 
     const capturedAt = new Date().toISOString();
     const p = await Promise.race([pos.current ?? position(), new Promise<null>((r) => setTimeout(() => r(null), 8000))]);
     const mime = file.type || "image/jpeg";
+    // Copy the photo's bytes now. On iPhone the picked File is only a temporary reference
+    // and reads back empty once stored for later, so the upload went out with no content.
+    const bytes = await readBytes(file);
+    if (!bytes) { setNote("That photo couldn't be read. Try taking or choosing it again."); return; }
     const id = crypto.randomUUID();
     await queuePut({
       id, workOrderId, jobItemId, path: `${workOrderId}/quote-${id}.${EXT[mime] ?? "jpg"}`,
-      blob: file, name: file.name || "quote.jpg", mime, capturedAt,
+      blob: new Blob([bytes], { type: mime }), name: file.name || "quote.jpg", mime, capturedAt,
       lat: p?.coords.latitude ?? null, lng: p?.coords.longitude ?? null, accuracy: p?.coords.accuracy ?? null,
     });
     setNote(p ? null : "No location for that photo. Allow location for this site in your phone's settings if you can.");

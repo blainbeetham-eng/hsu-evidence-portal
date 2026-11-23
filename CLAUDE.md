@@ -9,5 +9,9 @@
 - Access control lives in Postgres RLS (`supabase/migrations`). Pages read with the signed-in user's client
   (`createClient` in `src/lib/supabase/server.ts`); the secret-key client is only for the sync after authorisation.
   Every policy change needs a test in `tests/db/rls.test.ts`.
+- Quote visit (23 Nov 2026, `/visit/[propertyId]`, admin only): field definitions are data in `src/lib/quote-visit.ts`.
+  Item measurements are `job_items.details` keys prefixed `q_` (shared with the works stage; `mergeWorksDetails`
+  keeps them when the field team saves), whole-job answers are in `quote_visits`, photos are `evidence_files`
+  stage `assessment`, `checklist_key = 'quote'`, `hidden = true`.
 - No secrets in the repo. Values live in `.env.local` and Vercel env vars.
 - Keep it simple: Blain prefers the smallest change that solves the real problem.
