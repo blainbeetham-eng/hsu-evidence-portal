@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireFieldUser } from "@/lib/dal";
 import { TEMPLATES, itemKind, templateFor } from "@/lib/checklists";
+import { mergeWorksDetails } from "@/lib/quote-visit";
 
 // Field team actions (spec v0.8 item 6, Section 5). The signed-in person's own session,
 // so RLS decides: they can only touch jobs given to the field team, and photos go in as
@@ -121,11 +122,13 @@ export async function saveItemDetails(workOrderId: string, itemId: string, detai
   await requireFieldUser();
   const supabase = await createClient();
   const j = await job(supabase, workOrderId);
-  const { data: item } = await supabase.from("job_items").select("kind, work_order_id").eq("id", itemId).maybeSingle();
+  const { data: item } = await supabase.from("job_items").select("kind, work_order_id, details").eq("id", itemId).maybeSingle();
   if (!j?.template || !item || item.work_order_id !== workOrderId) return { ok: false, message: "Item not found." };
   const fields = itemKind(j.template, item.kind)?.fields ?? [];
   const clean = Object.fromEntries(fields.flatMap((f) => (details[f.key] ? [[f.key, String(details[f.key]).slice(0, 300)]] : [])));
-  const { data, error } = await supabase.from("job_items").update({ details: clean }).eq("id", itemId).select("id");
+  // Keep HSU's quote-visit measurements (q_ keys) on the item.
+  const merged = mergeWorksDetails(item.details as Record<string, string> | null, clean);
+  const { data, error } = await supabase.from("job_items").update({ details: merged }).eq("id", itemId).select("id");
   if (error) return { ok: false, message: error.message };
   if (!data?.length) return { ok: false, message: "This item is locked: HSU has accepted its photos." };
   revalidatePath(`/field/${workOrderId}`);

@@ -124,3 +124,4 @@ h4 { font-size: 0.95rem; margin: 0.75rem 0 0.4rem; }
 .camera input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .queue-bar { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 0.6rem 0; }
 label.button { background: var(--green); color: #fff; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 6px; min-height: 44px; }
+label.button.secondary { background: transparent; color: var(--green); border: 1px solid var(--border); }

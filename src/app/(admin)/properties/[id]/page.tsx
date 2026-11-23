@@ -160,6 +160,10 @@ export default async function PropertyPage({
 
       {!preview && (
         <div className="stack">
+          <p>
+            <Link className="button" href={`/visit/${id}`}>Quote visit: measurements and photos</Link>{" "}
+            <span className="muted small">Phone-friendly. Photos stay hidden from landlords and agencies.</span>
+          </p>
           {driveFolders.length > 0 ? (
             driveFolders.map((w) => (
               <ImportButton
