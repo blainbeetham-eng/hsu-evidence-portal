@@ -107,6 +107,7 @@ const MIME_BY_EXT: Record<string, string> = {
   heif: "image/heif", webp: "image/webp", mp4: "video/mp4", mov: "video/quicktime",
 };
 const CHUNK = 6 * 1024 * 1024; // Supabase's resumable uploads require 6 MB chunks
+const DIRECT_MAX_BYTES = 40 * 1024 * 1024; // photos and PDFs up to this go as one plain upload
 
 function mimeOf(file: File) {
   return file.type || MIME_BY_EXT[file.name.split(".").pop()?.toLowerCase() ?? ""] || "";
@@ -186,9 +187,20 @@ export function UploadPanel({
     const log = (i: number, line: string) => setStatus((s) => { const n = [...s]; n[i] = line; return n; });
     setStatus(Array.from(files, (f) => `${f.name}: waiting`));
     const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) { setStatus(["Your session has expired. Reload the page and sign in again."]); setBusy(false); return; }
+    // The resumable upload (videos and very large files) needs the session token. Fetched only
+    // when needed and with a time limit: on iPhone getSession() could hang, which left every
+    // photo at "waiting" (31 Grandview Ave, 27 Nov 2026).
+    let token: string | null | undefined;
+    const getToken = async () => {
+      if (token === undefined) {
+        const r = await Promise.race([
+          supabase.auth.getSession().then(({ data }) => data.session?.access_token ?? null),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
+        ]);
+        token = r;
+      }
+      return token;
+    };
 
     for (const [i, file] of Array.from(files).entries()) {
       const mime = mimeOf(file);
@@ -197,25 +209,48 @@ export function UploadPanel({
         continue;
       }
       try {
-        const sha256 = await hashFile(file, (p) => log(i, `${file.name}: checking ${Math.round(p * 100)}%`));
-        let takenAt: string | null = null;
-        if (mime.startsWith("image/")) {
-          const exif = await exifr.parse(file, ["DateTimeOriginal"]).catch(() => null);
-          if (exif?.DateTimeOriginal instanceof Date) takenAt = exif.DateTimeOriginal.toISOString();
-        }
         const base = `${workOrderId}/${crypto.randomUUID()}`;
         const path = `${base}-${safeName(file.name)}`;
         let posterPath: string | null = null;
         let durationS: number | null = null;
-        if (mime.startsWith("video/")) {
-          const { poster, duration } = await videoPoster(file);
-          durationS = duration;
-          if (poster) {
-            posterPath = `${base}-poster.jpg`;
-            await tusUpload(poster, posterPath, "image/jpeg", token, () => {});
+        let sha256: string;
+        let takenAt: string | null = null;
+        const small = !mime.startsWith("video/") && file.size <= DIRECT_MAX_BYTES;
+
+        if (small) {
+          // Photos and PDFs: read once, then a plain upload of the bytes (the same method the
+          // quote visit and field pages use, which works on iPhone).
+          log(i, `${file.name}: reading`);
+          const bytes = await file.arrayBuffer();
+          if (!bytes.byteLength) throw new Error("the phone couldn't read this file");
+          const hasher = await createSHA256();
+          hasher.update(new Uint8Array(bytes));
+          sha256 = hasher.digest("hex");
+          if (mime.startsWith("image/")) {
+            const exif = await exifr.parse(bytes, ["DateTimeOriginal"]).catch(() => null);
+            if (exif?.DateTimeOriginal instanceof Date) takenAt = exif.DateTimeOriginal.toISOString();
           }
+          log(i, `${file.name}: uploading`);
+          const { error } = await supabase.storage.from("evidence").upload(path, bytes, { contentType: mime, upsert: false });
+          if (error) throw new Error(error.message);
+        } else {
+          const t = await getToken();
+          if (!t) { log(i, `${file.name}: your session has expired or isn't responding. Reload the page and try again.`); continue; }
+          sha256 = await hashFile(file, (p) => log(i, `${file.name}: checking ${Math.round(p * 100)}%`));
+          if (mime.startsWith("image/")) {
+            const exif = await exifr.parse(file, ["DateTimeOriginal"]).catch(() => null);
+            if (exif?.DateTimeOriginal instanceof Date) takenAt = exif.DateTimeOriginal.toISOString();
+          }
+          if (mime.startsWith("video/")) {
+            const { poster, duration } = await videoPoster(file);
+            durationS = duration;
+            if (poster) {
+              posterPath = `${base}-poster.jpg`;
+              await tusUpload(poster, posterPath, "image/jpeg", t, () => {});
+            }
+          }
+          await tusUpload(file, path, mime, t, (p) => log(i, `${file.name}: uploading ${Math.round(p * 100)}%`));
         }
-        await tusUpload(file, path, mime, token, (p) => log(i, `${file.name}: uploading ${Math.round(p * 100)}%`));
         log(i, `${file.name}: saving`);
         const r = await recordUpload({
           propertyId, workOrderId, path, posterPath, fileName: file.name, mime, size: file.size, sha256, takenAt, durationS,
